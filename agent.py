@@ -10,6 +10,10 @@ class CLRAgent:
         self.scorer = LoadScoreEngine()
         self.last_intervention = 0
         self.cooldown_secs = 60  # avoid spamming actions
+        self.vision_state = []  
+
+    def set_vision_state(self, vs: dict):
+        self.vision_state = vs or {}
 
     def set_focus_mode(self, enabled: bool):
         self.focus_mode = enabled
@@ -36,7 +40,7 @@ class CLRAgent:
         while True:
             time.sleep(5)
 
-            signals = self.collector.get_state()
+            signals = self.collector.get_state(self.vision_state)
             result = self.scorer.compute(signals)
 
             score = result["score"]

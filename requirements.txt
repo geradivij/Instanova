@@ -11,3 +11,4 @@ opencv-python
 mediapipe
 PyQt5
 pillow
+.venv

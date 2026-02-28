@@ -9,9 +9,9 @@ class LoadScoreEngine:
         'eye_strained': 4,       # fatigue (later, from vision)
     }
 
-    OVERLOAD_THRESHOLD = 75
-    ELEVATED_THRESHOLD = 45
-    RAGE_THRESHOLD = 90
+    OVERLOAD_THRESHOLD = 40
+    ELEVATED_THRESHOLD = 20
+    RAGE_THRESHOLD = 60
 
     def __init__(self):
         self.history = []  # (timestamp, score)
@@ -30,6 +30,9 @@ class LoadScoreEngine:
 
         if s.get('eye_state') == 'strained':
             score += self.WEIGHTS['eye_strained']
+        
+        if s.get('stressed_face'):
+            score += self.WEIGHTS.get('eye_strained', 4)
 
         score = min(int(score), 100)
         self.history.append((time.time(), score))

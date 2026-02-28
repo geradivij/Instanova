@@ -9,17 +9,16 @@ from dashboard import CLRDashboard
 def main():
     app = QApplication(sys.argv)
 
-    # Start vision
     vision = VisionPipeline()
     print("Vision pipeline started")
 
-    # Start agent
     agent = CLRAgent()
-    # Create dashboard and connect agent → UI
     dashboard = CLRDashboard(agent=agent)
+
+    # Agent → UI
     agent.ui_callback = dashboard.update_from_agent
 
-    # Feed vision into agent
+    # Vision → agent
     def vision_feed():
         while True:
             vs = vision.get_state()

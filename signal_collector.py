@@ -1,39 +1,45 @@
+# signal_collector.py
 import time, threading, collections
 from pynput import keyboard, mouse
 
-# --- Windows active window title ---
 try:
     import pygetwindow as gw
     def GET_WINDOW():
         w = gw.getActiveWindow()
         return w.title if w else ''
 except Exception:
-    GET_WINDOW = lambda: ''  # fallback
+    GET_WINDOW = lambda: ''
 
 
 class SignalCollector:
     def __init__(self, window_secs=30):
         self.window_secs = window_secs
-        self.backspace_times = collections.deque()   # timestamps of backspaces
-        self.window_switches = collections.deque()   # timestamps of app switches
-        self.last_activity = time.time()             # for idle detection
+        self.backspace_times = collections.deque()
+        self.window_switches = collections.deque()
+        self.last_activity = time.time()
         self.last_window = ''
+        self.backspace_burst_count = 0
+
+        # new fields for calls
+        self.active_app = ''
+        self.app_enter_time = time.time()
+
         self._start_listeners()
 
     def _start_listeners(self):
-        # Keyboard listener
+        # Keyboard
         def on_key(key):
             self.last_activity = time.time()
             if key == keyboard.Key.backspace:
                 self.backspace_times.append(time.time())
         keyboard.Listener(on_press=on_key).start()
 
-        # Mouse listener (any move = not idle)
+        # Mouse
         def on_move(x, y):
             self.last_activity = time.time()
         mouse.Listener(on_move=on_move).start()
 
-        # App switch tracker — poll every 1 second
+        # App switch + call tracker
         def poll_window():
             while True:
                 try:
@@ -41,6 +47,8 @@ class SignalCollector:
                     if w and w != self.last_window:
                         self.window_switches.append(time.time())
                         self.last_window = w
+                        self.active_app = w
+                        self.app_enter_time = time.time()
                 except Exception:
                     pass
                 time.sleep(1)
@@ -55,15 +63,12 @@ class SignalCollector:
         now = time.time()
         cutoff = now - self.window_secs
 
-        # Prune old events
         self._prune(self.window_switches, cutoff)
         self._prune(self.backspace_times, cutoff)
 
-        # Count app switches in last 30s
         switches = len(self.window_switches)
 
-        # Count backspace bursts (5+ backspaces within 3 seconds)
-        # We'll count how many burst "windows" start points satisfy this.
+        # backspace bursts: 5+ in 3s
         bs = list(self.backspace_times)
         bursts = 0
         j = 0
@@ -73,25 +78,34 @@ class SignalCollector:
             if (j - i) >= 5:
                 bursts += 1
 
-        # Idle time (seconds since last activity)
         idle_secs = int(now - self.last_activity)
 
-        # Merge optional vision state
         eye_state = vision_state.get('eye_state', 'unknown') if vision_state else 'unknown'
         face_present = vision_state.get('face_present', True) if vision_state else True
+        stressed_face = vision_state.get('stressed_face', False) if vision_state else False
+
+        # call tracking
+        in_app_secs = now - self.app_enter_time
+        app_lower = self.active_app.lower() if self.active_app else ""
+        on_call = any(x in app_lower for x in ["zoom", "meet", "teams", "webex", "huddle", "call", "phone"])
+        call_minutes = int(in_app_secs / 60) if on_call else 0
 
         return {
             'app_switches_30s': switches,
             'backspace_bursts': bursts,
             'idle_secs': idle_secs,
             'face_present': face_present,
-            'eye_state': eye_state,   # 'open', 'strained', 'closed'
+            'eye_state': eye_state,
+            'stressed_face': stressed_face,
+            'active_app': self.active_app,
+            'on_call': on_call,
+            'call_minutes': call_minutes,
         }
 
 
 if __name__ == '__main__':
     sc = SignalCollector()
     print('Collecting signals... (switch apps, move mouse, spam backspace)')
-    for _ in range(12):   # ~1 minute
+    for _ in range(12):
         time.sleep(5)
         print(sc.get_state())

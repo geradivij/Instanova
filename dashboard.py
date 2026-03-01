@@ -2,12 +2,13 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame
 )
-from PyQt5.QtCore import pyqtSignal, QObject, Qt, QPoint
+from PyQt5.QtCore import pyqtSignal, QObject, Qt, QTimer
 from PyQt5.QtGui import QFont, QColor, QPainter, QPen
 
 
 class AgentBridge(QObject):
-    updated = pyqtSignal(dict)
+    updated      = pyqtSignal(dict)
+    stress_heard = pyqtSignal(str)   # new: stress message signal
 
 
 class DraggableWidget(QWidget):
@@ -40,20 +41,16 @@ class ScoreArc(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(10, 10, -10, -10)
-
         pen = QPen(QColor("#2A2A3E"), 8, Qt.SolidLine, Qt.RoundCap)
         painter.setPen(pen)
         painter.drawArc(rect, 225 * 16, -270 * 16)
-
         if self._score > 0:
             span = int(-270 * 16 * self._score / 100)
             pen2 = QPen(self._color, 8, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(pen2)
             painter.drawArc(rect, 225 * 16, span)
-
         painter.setPen(QColor("#FFFFFF"))
-        font = QFont("Courier New", 14, QFont.Bold)
-        painter.setFont(font)
+        painter.setFont(QFont("Courier New", 14, QFont.Bold))
         painter.drawText(rect, Qt.AlignCenter, str(self._score))
 
 
@@ -65,12 +62,13 @@ class CLRDashboard(QMainWindow):
 
         self.setWindowTitle("CLR")
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
-        # NO translucent background — solid and visible
-        self.resize(440, 220)
+        self.resize(460, 260)
         self.move(20, 20)
 
         self.bridge = AgentBridge()
         self.bridge.updated.connect(self.handle_update)
+        self.bridge.stress_heard.connect(self.show_stress_message)
+
         self._build_ui()
 
     def _build_ui(self):
@@ -87,18 +85,15 @@ class CLRDashboard(QMainWindow):
 
         root = QVBoxLayout(outer)
         root.setContentsMargins(16, 12, 16, 12)
-        root.setSpacing(10)
+        root.setSpacing(8)
 
         # ── Header ──────────────────────────────────────────────────
         header = QHBoxLayout()
-
         clr = QLabel("CLR")
         clr.setFont(QFont("Courier New", 13, QFont.Bold))
         clr.setStyleSheet("color: #89B4FA; letter-spacing: 4px; background: transparent;")
-
         self.status_dot = QLabel("●")
         self.status_dot.setStyleSheet("color: #A6E3A1; font-size: 11px; background: transparent;")
-
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(24, 24)
         self.close_btn.clicked.connect(self.close)
@@ -106,7 +101,6 @@ class CLRDashboard(QMainWindow):
             QPushButton { background: transparent; color: #585B70; border: none; font-size: 13px; }
             QPushButton:hover { color: #F38BA8; }
         """)
-
         header.addWidget(clr)
         header.addSpacing(6)
         header.addWidget(self.status_dot)
@@ -114,40 +108,49 @@ class CLRDashboard(QMainWindow):
         header.addWidget(self.close_btn)
         root.addLayout(header)
 
-        # ── Divider ──────────────────────────────────────────────────
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
         line.setStyleSheet("background: #2A2A3E; max-height: 1px;")
         root.addWidget(line)
 
-        # ── Score + Info row ─────────────────────────────────────────
+        # ── Score + Info ─────────────────────────────────────────────
         mid = QHBoxLayout()
         mid.setSpacing(16)
-
         self.arc = ScoreArc()
         mid.addWidget(self.arc)
 
         info = QVBoxLayout()
         info.setSpacing(4)
-
         self.zone_label = QLabel("CALM")
         self.zone_label.setFont(QFont("Courier New", 18, QFont.Bold))
         self.zone_label.setStyleSheet("color: #A6E3A1; letter-spacing: 3px; background: transparent;")
         info.addWidget(self.zone_label)
-
         self.coach_label = QLabel("All good. Ready when you are.")
         self.coach_label.setWordWrap(True)
         self.coach_label.setFont(QFont("Segoe UI", 10))
         self.coach_label.setStyleSheet("color: #CDD6F4; background: transparent;")
         info.addWidget(self.coach_label)
-
         self.signal_label = QLabel("sw:0  bs:0  idle:0s  eye:–")
         self.signal_label.setFont(QFont("Courier New", 8))
         self.signal_label.setStyleSheet("color: #45475A; background: transparent;")
         info.addWidget(self.signal_label)
-
         mid.addLayout(info)
         root.addLayout(mid)
+
+        # ── Stress message banner (hidden by default) ─────────────────
+        self.stress_banner = QLabel("")
+        self.stress_banner.setWordWrap(True)
+        self.stress_banner.setAlignment(Qt.AlignCenter)
+        self.stress_banner.setFont(QFont("Segoe UI", 10))
+        self.stress_banner.setStyleSheet("""
+            background: rgba(243,139,168,0.15);
+            color: #F38BA8;
+            border: 1px solid rgba(243,139,168,0.4);
+            border-radius: 8px;
+            padding: 6px 10px;
+        """)
+        self.stress_banner.hide()
+        root.addWidget(self.stress_banner)
 
         # ── Focus button ─────────────────────────────────────────────
         self.focus_btn = QPushButton("▶   START FOCUS SESSION")
@@ -167,12 +170,9 @@ class CLRDashboard(QMainWindow):
     def _set_btn_idle(self):
         self.focus_btn.setStyleSheet("""
             QPushButton {
-                background: #1E1E2E;
-                color: #89B4FA;
-                border: 1px solid #89B4FA;
-                border-radius: 8px;
-                padding: 6px 14px;
-                letter-spacing: 1px;
+                background: #1E1E2E; color: #89B4FA;
+                border: 1px solid #89B4FA; border-radius: 8px;
+                padding: 6px 14px; letter-spacing: 1px;
             }
             QPushButton:hover { background: #2A2A3E; }
         """)
@@ -180,18 +180,28 @@ class CLRDashboard(QMainWindow):
     def _set_btn_active(self):
         self.focus_btn.setStyleSheet("""
             QPushButton {
-                background: #1A2E1A;
-                color: #A6E3A1;
-                border: 1px solid #A6E3A1;
-                border-radius: 8px;
-                padding: 6px 14px;
-                letter-spacing: 1px;
+                background: #1A2E1A; color: #A6E3A1;
+                border: 1px solid #A6E3A1; border-radius: 8px;
+                padding: 6px 14px; letter-spacing: 1px;
             }
             QPushButton:hover { background: #1F3A1F; }
         """)
 
     def update_from_agent(self, data: dict):
         self.bridge.updated.emit(data)
+
+    def notify_stress(self, message: str):
+        """Called from agent thread when stress voice is detected."""
+        self.bridge.stress_heard.emit(message)
+
+    def show_stress_message(self, message: str):
+        """Shows gentle message in UI — runs on UI thread."""
+        self.stress_banner.setText(f"💬 {message}")
+        self.stress_banner.show()
+        # auto-hide after 12 seconds
+        QTimer.singleShot(12000, self.stress_banner.hide)
+        # also resize to fit
+        self.adjustSize()
 
     def handle_update(self, data: dict):
         score   = data.get("score", 0)
@@ -215,8 +225,6 @@ class CLRDashboard(QMainWindow):
         self.zone_label.setStyleSheet(f"color: {color}; letter-spacing: 3px; background: transparent;")
         self.coach_label.setText(coach)
         self.status_dot.setStyleSheet(f"color: {color}; font-size: 11px; background: transparent;")
-
-        # update border colour to match zone
         self.centralWidget().setStyleSheet(f"""
             QWidget#outer {{
                 background-color: #12121E;
@@ -229,7 +237,7 @@ class CLRDashboard(QMainWindow):
         bs  = signals.get("backspace_bursts", 0)
         id_ = signals.get("idle_secs", 0)
         ey  = signals.get("eye_state", "?")
-        app = (signals.get("active_app") or "")[:28]
+        app = (signals.get("active_app") or "")[:30]
         self.signal_label.setText(f"sw:{sw}  bs:{bs}  idle:{id_}s  eye:{ey}  {app}")
 
         if log:

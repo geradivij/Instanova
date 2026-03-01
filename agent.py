@@ -167,21 +167,21 @@ class CLRAgent:
 
             self.last_zone = zone
 
-            # ── Hand on face/head voice — once per 90s, always fires ──
-            hof = signals.get("hand_on_face", False)
-            hoh = signals.get("hand_on_head", False)
+            # ── Hand on face/head — READ FROM vision_state not signals ──
+            hof = self.vision_state.get("hand_on_face", False)
+            hoh = self.vision_state.get("hand_on_head", False)
             now = time.time()
             if (hof or hoh) and (now - self._last_hand_voice) > 90:
-                print(f"[AGENT] Hand gesture detected: face={hof} head={hoh}")
+                print(f"[AGENT] Hand gesture: face={hof} head={hoh} — SPEAKING NOW")
                 try:
                     from voice_output import speak_hand_detected
                     speak_hand_detected()
                 except Exception as e:
                     print(f"[AGENT] hand voice error: {e}")
                 self._last_hand_voice = now
-                # show in dashboard too
                 if self.dashboard:
-                    self.dashboard.notify_stress("Hand on your face — take a breath 🌿")
+                    msg = "Hand on your head — you okay? Breathe 🌿" if hoh else "Hand on your face — take a breath 🌿"
+                    self.dashboard.notify_stress(msg)
 
             self.cooldown_secs = self.memory.get_adapted_cooldown()
             self.maybe_auto_focus(score, zone, signals)

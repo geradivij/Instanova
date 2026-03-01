@@ -26,7 +26,8 @@ class CLRAgent:
         self.memory = AgentMemory()
         self.cooldown_secs = self.memory.get_adapted_cooldown()
         self.last_intervention = 0
-        self._last_hand_voice = 0   # throttle hand voice to once per 90s
+        self._last_hand_voice = 0   # throttle hand voice
+        self._hand_was_detected = False  # track state change
 
         self.action_map = {
             "hide_chat_and_focus_work": "hide_chat_and_focus_work",
@@ -171,7 +172,11 @@ class CLRAgent:
             hof = self.vision_state.get("hand_on_face", False)
             hoh = self.vision_state.get("hand_on_head", False)
             now = time.time()
-            if (hof or hoh) and (now - self._last_hand_voice) > 90:
+            currently_detected = hof or hoh
+            # fire on: NEW detection (was off, now on) OR every 20s while持续
+            just_raised = currently_detected and not self._hand_was_detected
+            cooldown_ok = (now - self._last_hand_voice) > 20
+            if currently_detected and (just_raised or cooldown_ok):
                 print(f"[AGENT] Hand gesture: face={hof} head={hoh} — SPEAKING NOW")
                 try:
                     from voice_output import speak_hand_detected
@@ -182,6 +187,7 @@ class CLRAgent:
                 if self.dashboard:
                     msg = "Hand on your head — you okay? Breathe 🌿" if hoh else "Hand on your face — take a breath 🌿"
                     self.dashboard.notify_stress(msg)
+            self._hand_was_detected = currently_detected
 
             self.cooldown_secs = self.memory.get_adapted_cooldown()
             self.maybe_auto_focus(score, zone, signals)

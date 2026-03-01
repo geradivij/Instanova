@@ -193,6 +193,22 @@ class CLRAgent:
                 except Exception:
                     pass
 
+            # gentle voice when hand on face/head detected (once per minute)
+            hof = signals.get("hand_on_face", False)
+            hoh = signals.get("hand_on_head", False)
+            if (hof or hoh) and (time.time() - self.last_intervention) > 60:
+                try:
+                    from voice_output import speak_text
+                    import random
+                    msgs = [
+                        "Hey — hand on your head. You doing okay?",
+                        "I see that. Take a breath. You've got this.",
+                        "Looks like you might be stressed. No rush — I'm here.",
+                    ]
+                    speak_text(random.choice(msgs))
+                except Exception:
+                    pass
+
             self.last_zone = zone
             self.cooldown_secs = self.memory.get_adapted_cooldown()
             self.maybe_auto_focus(score, zone, signals)

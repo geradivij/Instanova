@@ -217,7 +217,10 @@ class CLRDashboard(QMainWindow):
         }
         color, state_text, coach = ZONE_CFG.get(zone, ZONE_CFG["NORMAL"])
 
-        if zone == "NORMAL" and signals.get("on_call") and signals.get("call_minutes", 0) >= 1:
+        if signals.get("hand_on_face") or signals.get("hand_on_head"):
+            coach = "Hand on your face/head — you okay? Take a breath 🌿"
+            color = "#F38BA8" if zone in ("NORMAL", "ELEVATED") else color
+        elif zone == "NORMAL" and signals.get("on_call") and signals.get("call_minutes", 0) >= 1:
             coach = "Long call — ready to get back?"
 
         self.arc.set_score(int(score), color)
@@ -237,8 +240,12 @@ class CLRDashboard(QMainWindow):
         bs  = signals.get("backspace_bursts", 0)
         id_ = signals.get("idle_secs", 0)
         ey  = signals.get("eye_state", "?")
-        app = (signals.get("active_app") or "")[:30]
-        self.signal_label.setText(f"sw:{sw}  bs:{bs}  idle:{id_}s  eye:{ey}  {app}")
+        hof = "^^" if signals.get("hand_on_face") else "·"
+        hoh = ">>" if signals.get("hand_on_head") else "·"
+        app = (signals.get("active_app") or "")[:22]
+        self.signal_label.setText(
+            f"sw:{sw}  bs:{bs}  idle:{id_}s  eye:{ey}  face:{hof}  head:{hoh}  {app}"
+        )
 
         if log:
             self.log_label.setText(f"⚡ {log}")

@@ -11,44 +11,50 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
 
-    # Vision (webcam → face/eye state)
     vision = VisionPipeline()
     print("[MAIN] Vision pipeline started")
 
-    # Agent (signal collection + Gemma decisions)
-    agent = CLRAgent()
+    agent = CLRAgent(vision_pipeline=vision)
 
-    # Dashboard (HUD)
     dashboard = CLRDashboard(agent=agent)
     agent.ui_callback = dashboard.update_from_agent
 
-    # Feed vision state into agent every 2s
+    # Vision feed thread
     def vision_feed():
         while True:
             vs = vision.get_state()
             agent.set_vision_state(vs)
             time.sleep(2)
-
     threading.Thread(target=vision_feed, daemon=True).start()
+
+    # Voice listener thread
+    def start_voice_listener():
+        try:
+            from voice_input import VoiceListener
+            listener = VoiceListener(on_stress_detected=agent.on_stress_detected)
+            listener.start()
+            print("[MAIN] Voice listener started — say 'I'm so stressed' to trigger")
+        except Exception as e:
+            print(f"[MAIN] Voice listener unavailable: {e}")
+    threading.Thread(target=start_voice_listener, daemon=True).start()
 
     agent.start()
     dashboard.show()
 
-    # Startup voice greeting
+    # Startup greeting
     def greet():
         time.sleep(1.5)
         try:
             from voice_output import speak_text
             speak_text(
-                "CLR is running. Press the focus button to activate your session "
+                "CLR is running. Press the focus button when you're ready "
                 "and I'll keep your attention protected."
             )
         except Exception:
             pass
-
     threading.Thread(target=greet, daemon=True).start()
 
-    print("[MAIN] CLR running. Toggle Focus Mode in the HUD.")
+    print("[MAIN] CLR running.")
     sys.exit(app.exec_())
 
 

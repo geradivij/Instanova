@@ -2,7 +2,7 @@
 
 import pygetwindow as gw
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QApplication, QPushButton, QHBoxLayout
+    QWidget, QLabel, QVBoxLayout, QApplication, QPushButton
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -28,21 +28,19 @@ def _qt(func):
         QTimer.singleShot(0, func)
 
 
-# ── Overlay widgets ────────────────────────────────────────────────────────
-
-def show_break_overlay(duration_secs=120, message="Short reset", submessage=""):
+def show_break_overlay(duration_secs=120, message="Short reset", submessage="", color="#89B4FA"):
     def _show():
         w = QWidget()
         w.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         w.setStyleSheet("background-color: rgba(10,10,20,245);")
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
         title = QLabel(message)
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(
-            "color: #CDD6F4; font-size: 26px; font-weight: bold; font-family: 'Courier New';"
+            f"color: {color}; font-size: 26px; font-weight: bold; font-family: 'Courier New';"
         )
         layout.addWidget(title)
 
@@ -55,20 +53,20 @@ def show_break_overlay(duration_secs=120, message="Short reset", submessage=""):
         countdown = QLabel(f"{duration_secs}s")
         countdown.setAlignment(Qt.AlignCenter)
         countdown.setStyleSheet(
-            "color: #89B4FA; font-size: 48px; font-weight: bold; font-family: 'Courier New';"
+            f"color: {color}; font-size: 52px; font-weight: bold; font-family: 'Courier New';"
         )
         layout.addWidget(countdown)
 
-        btn = QPushButton("DISMISS")
+        btn = QPushButton("I'M BACK")
         btn.clicked.connect(w.close)
-        btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(137,180,250,0.15); color: #89B4FA;
-                border: 1px solid rgba(137,180,250,0.4); border-radius: 8px;
-                padding: 8px 24px; font-family: 'Courier New'; font-size: 12px;
-                letter-spacing: 2px;
-            }
-            QPushButton:hover { background: rgba(137,180,250,0.28); }
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(137,180,250,0.12); color: {color};
+                border: 1px solid {color}44; border-radius: 8px;
+                padding: 8px 28px; font-family: 'Courier New';
+                font-size: 12px; letter-spacing: 2px;
+            }}
+            QPushButton:hover {{ background: rgba(137,180,250,0.22); }}
         """)
         layout.addWidget(btn, alignment=Qt.AlignCenter)
 
@@ -101,14 +99,13 @@ def show_nudge_overlay(message="Back to your project?"):
         screen = QApplication.primaryScreen().availableGeometry()
         w.move(screen.width() - 410, 50)
 
+        from PyQt5.QtWidgets import QHBoxLayout
         layout = QHBoxLayout(w)
         layout.setContentsMargins(16, 0, 16, 0)
         icon = QLabel("💡")
         icon.setStyleSheet("font-size: 18px;")
         label = QLabel(message)
-        label.setStyleSheet(
-            "color: #F9E2AF; font-size: 13px; font-family: 'Courier New';"
-        )
+        label.setStyleSheet("color: #F9E2AF; font-size: 13px; font-family: 'Courier New';")
         layout.addWidget(icon)
         layout.addWidget(label)
 
@@ -117,122 +114,112 @@ def show_nudge_overlay(message="Back to your project?"):
     _qt(_show)
 
 
-def show_rage_overlay(message="You're in the red. Five-minute reset."):
-    """Full screen red tinted rage banner."""
+def show_breathing_overlay(vision_pipeline=None):
     def _show():
         w = QWidget()
         w.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
-        w.setStyleSheet("background-color: rgba(15,5,10,250);")
+        w.setStyleSheet("background-color: rgba(10,12,20,245);")
         layout = QVBoxLayout(w)
         layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(16)
 
-        icon = QLabel("🛑")
-        icon.setAlignment(Qt.AlignCenter)
-        icon.setStyleSheet("font-size: 56px;")
-        layout.addWidget(icon)
+        emoji = QLabel("🌿")
+        emoji.setAlignment(Qt.AlignCenter)
+        emoji.setStyleSheet("font-size: 52px;")
+        layout.addWidget(emoji)
 
-        title = QLabel("OVERLOADED")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(
-            "color: #F38BA8; font-size: 32px; font-weight: bold; font-family: 'Courier New'; letter-spacing: 4px;"
+        msg = QLabel("Take a slow breath.")
+        msg.setAlignment(Qt.AlignCenter)
+        msg.setStyleSheet(
+            "color: #A6E3A1; font-size: 24px; font-weight: bold; font-family: 'Courier New';"
         )
-        layout.addWidget(title)
+        layout.addWidget(msg)
 
-        sub = QLabel(message)
+        sub = QLabel("Everything's been closed. Just you and your breath.")
         sub.setAlignment(Qt.AlignCenter)
-        sub.setStyleSheet("color: #CDD6F4; font-size: 15px; font-family: 'Courier New';")
+        sub.setStyleSheet("color: #585B70; font-size: 13px; font-family: 'Courier New';")
         layout.addWidget(sub)
 
-        countdown = QLabel("300s")
-        countdown.setAlignment(Qt.AlignCenter)
-        countdown.setStyleSheet(
-            "color: #F38BA8; font-size: 52px; font-weight: bold; font-family: 'Courier New';"
-        )
-        layout.addWidget(countdown)
+        status = QLabel("")
+        status.setAlignment(Qt.AlignCenter)
+        status.setStyleSheet("color: #89B4FA; font-size: 13px; font-family: 'Courier New';")
+        layout.addWidget(status)
 
-        btn = QPushButton("I'M BACK")
+        btn = QPushButton("I'M OKAY")
         btn.clicked.connect(w.close)
         btn.setStyleSheet("""
             QPushButton {
-                background: rgba(243,139,168,0.15); color: #F38BA8;
-                border: 1px solid rgba(243,139,168,0.4); border-radius: 8px;
-                padding: 8px 24px; font-family: 'Courier New'; font-size: 12px; letter-spacing: 2px;
+                background: rgba(166,227,161,0.12); color: #A6E3A1;
+                border: 1px solid rgba(166,227,161,0.35); border-radius: 8px;
+                padding: 8px 28px; font-family: 'Courier New';
+                font-size: 12px; letter-spacing: 2px;
             }
-            QPushButton:hover { background: rgba(243,139,168,0.28); }
+            QPushButton:hover { background: rgba(166,227,161,0.22); }
         """)
         layout.addWidget(btn, alignment=Qt.AlignCenter)
-
         w.showFullScreen()
 
-        remaining = [300]
-        def tick():
-            remaining[0] -= 1
-            if remaining[0] <= 0:
-                w.close()
-            else:
-                countdown.setText(f"{remaining[0]}s")
-        timer = QTimer(w)
-        timer.timeout.connect(tick)
-        timer.start(1000)
+        def check_face():
+            if vision_pipeline:
+                vs = vision_pipeline.get_state()
+                mouth_open = vs.get("mouth_open", False)
+                stressed   = vs.get("stressed_face", False)
+                try:
+                    from voice_output import speak_breathing_still_tense, speak_breathing_relaxed
+                    if stressed and not mouth_open:
+                        status.setText("You still look a little tense — no rush.")
+                        speak_breathing_still_tense()
+                    else:
+                        status.setText("You're looking better. Nice.")
+                        speak_breathing_relaxed()
+                except Exception:
+                    pass
+
+        QTimer.singleShot(8000, check_face)
+        QTimer.singleShot(45000, w.close)
 
     _qt(_show)
 
 
-# ── Main dispatcher ────────────────────────────────────────────────────────
-
-def execute_action(action: str):
+def execute_action(action: str, vision_pipeline=None):
     print(f"[EXECUTOR] Action: {action}")
     a = (action or "").strip().lower()
 
     try:
-        from voice_output import speak_text
+        from voice_output import (
+            speak_rage, speak_overload, speak_enforce_break,
+            speak_nudge, speak_stress_response
+        )
     except Exception:
-        speak_text = lambda t: None
+        speak_rage = speak_overload = speak_enforce_break = speak_nudge = speak_stress_response = lambda: None
 
     if a == "hide_chat_and_focus_work":
         hide_distraction_apps()
-        speak_text(
-            "You look overloaded. I've closed your distractions so you can get back in flow."
-        )
-        show_break_overlay(
-            60,
-            "Chats closed. 60-second reset.",
-            "Close your eyes. Take a breath. You've got this."
-        )
+        speak_overload()
+        show_break_overlay(60, "Chats closed. 60-second reset.", "Close your eyes. Take a breath.", color="#FAB387")
 
     elif a == "hide_slack_and_break":
         hide_distraction_apps()
-        speak_text(
-            "You've been in Slack too long and you look stressed. Closing distractions now."
-        )
-        show_break_overlay(
-            60,
-            "Slack closed. Quick reset.",
-            "Step back for a moment."
-        )
+        speak_overload()
+        show_break_overlay(60, "Slack closed. Quick reset.", "Step back for a moment.", color="#FAB387")
 
     elif a == "rage_break":
         hide_distraction_apps()
-        speak_text(
-            "Your load is in the red. I'm shutting down everything. Take five minutes. You've earned it."
-        )
-        show_rage_overlay("Distractions off. Five-minute reset — you've earned it.")
+        speak_rage()
+        show_break_overlay(300, "OVERLOADED", "Distractions off. Five-minute reset.", color="#F38BA8")
 
     elif a == "enforce_break":
-        speak_text(
-            "Your eyes are looking tired and you've been sitting too long. Time for a short break."
-        )
-        show_break_overlay(
-            180,
-            "Three-minute break.",
-            "Step away from the screen. Look at something far away."
-        )
+        speak_enforce_break()
+        show_break_overlay(180, "Three-minute break.", "Step away. Look at something far away.", color="#89B4FA")
 
     elif a in ("soft_nudge", "nudge"):
-        speak_text(
-            "Hey, this call is running long. When you're ready, I'll help you get back into your project."
-        )
+        speak_nudge()
         show_nudge_overlay("Long call — ready to get back to deep work?")
+
+    elif a == "stress_voice":
+        hide_distraction_apps()
+        speak_stress_response()
+        show_breathing_overlay(vision_pipeline=vision_pipeline)
 
     else:
         print(f"[EXECUTOR] No-op: {action}")

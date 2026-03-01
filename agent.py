@@ -1,20 +1,16 @@
 # agent.py
-
 import time
 import threading
 from signal_collector import SignalCollector
 from load_score import LoadScoreEngine
 from memory import AgentMemory
 
-# Friendly stress messages shown in the UI banner
 STRESS_UI_MESSAGES = [
     "Heard you. Don't give up — you're closer than you think 💙",
-    "Hey, it's okay to feel like this. Take a breath, I've got you.",
-    "I heard that. One thing at a time. You don't have to figure it all out now.",
-    "You said you're stressed — that's okay. Let's slow down together.",
-    "Don't give up yet. Hard things take time. I'm right here.",
+    "Hey, it's okay to feel like this. Take a breath.",
+    "I heard that. One thing at a time.",
+    "Don't give up yet. I'm right here.",
 ]
-
 
 class CLRAgent:
     def __init__(self, ui_callback=None, vision_pipeline=None, dashboard=None):
@@ -24,14 +20,13 @@ class CLRAgent:
         self.scorer = LoadScoreEngine()
         self.vision_state = {}
         self.ui_callback = ui_callback
-        self.dashboard = dashboard          # direct ref for stress banner
+        self.dashboard = dashboard
         self.last_zone = "NORMAL"
         self.vision_pipeline = vision_pipeline
-
         self.memory = AgentMemory()
         self.cooldown_secs = self.memory.get_adapted_cooldown()
         self.last_intervention = 0
-        self.last_intervention_idx = -1
+        self._last_hand_voice = 0   # throttle hand voice to once per 90s
 
         self.action_map = {
             "hide_chat_and_focus_work": "hide_chat_and_focus_work",
@@ -59,25 +54,16 @@ class CLRAgent:
             pass
 
     def on_stress_detected(self, text: str):
-        """Called by voice listener — gentle comfort only, no minimizing."""
         import random
         print(f"[AGENT] Stress phrase heard: '{text}'")
-
-        # Pick a comforting message
         message = random.choice(STRESS_UI_MESSAGES)
-
-        # Show in UI banner
         if self.dashboard:
             self.dashboard.notify_stress(message)
-
-        # Speak comforting response
         try:
             from voice_output import speak_stress_comfort
             speak_stress_comfort()
         except Exception:
             pass
-
-        # Only show breathing overlay — NO minimizing, NO forcing breaks
         try:
             from action_executor import show_breathing_overlay
             show_breathing_overlay(vision_pipeline=self.vision_pipeline)
@@ -85,30 +71,21 @@ class CLRAgent:
             print(f"[AGENT] breathing overlay error: {e}")
 
     def maybe_auto_focus(self, score, zone, signals):
-        """Only auto-triggers gentle nudges — NEVER minimizes without focus mode."""
         if not self.auto_focus_enabled:
             return
-
         on_call      = signals.get("on_call", False)
         call_minutes = signals.get("call_minutes", 0)
         stressed     = signals.get("stressed_face", False)
-        active_app   = (signals.get("active_app") or "").lower()
-
-        # Only nudge on calls — gentle, no minimizing
         if on_call and call_minutes >= 2 and stressed and not self.focus_mode:
-            self._execute_no_minimize("nudge")
+            self._execute_nudge_only()
             return
-
-        # Auto-enable focus mode if truly spiralling (high score) but don't act yet
         if not self.focus_mode:
             switches = signals.get("app_switches_30s", 0)
             bursts   = signals.get("backspace_bursts", 0)
             if score >= 80 or (switches >= 6 and bursts >= 3):
                 self.set_focus_mode(True)
 
-    def _execute_no_minimize(self, action_str):
-        """For nudges triggered outside focus mode — voice + overlay only, no minimize."""
-        print(f"[AGENT] Gentle nudge (no minimize): {action_str}")
+    def _execute_nudge_only(self):
         try:
             from voice_output import speak_nudge
             speak_nudge()
@@ -135,12 +112,7 @@ class CLRAgent:
             print(f"[AGENT] Gemma fallback ({e})")
             gemma_label = "rage_break" if zone == "RAGE" else "hide_chat_and_focus_work"
 
-        if memory_suggestion and memory_suggestion != gemma_label:
-            print(f"[AGENT] Memory overrides Gemma: {gemma_label} -> {memory_suggestion}")
-            label = memory_suggestion
-        else:
-            label = gemma_label
-
+        label = memory_suggestion if (memory_suggestion and memory_suggestion != gemma_label) else gemma_label
         return self.action_map.get(label)
 
     def _execute(self, action_str):
@@ -156,11 +128,11 @@ class CLRAgent:
     def _observe_outcome(self, idx, score_before):
         def _check():
             time.sleep(120)
-            signals    = self.collector.get_state(self.vision_state)
-            result     = self.scorer.compute(signals)
+            signals     = self.collector.get_state(self.vision_state)
+            result      = self.scorer.compute(signals)
             score_after = result.get("score", 0)
-            active     = (signals.get("active_app") or "").lower()
-            reopened   = any(k in active for k in ["slack","discord","whatsapp","youtube","twitter"])
+            active      = (signals.get("active_app") or "").lower()
+            reopened    = any(k in active for k in ["slack","discord","whatsapp","youtube","twitter"])
             self.memory.observe_outcome(idx, score_after, reopened)
             print(f"[MEMORY] Outcome: {score_before}->{score_after} reopened={reopened}")
             if score_after < score_before - 10 and not reopened:
@@ -184,7 +156,7 @@ class CLRAgent:
             if self.ui_callback:
                 self.ui_callback({"score": score, "zone": zone, "signals": signals, "log": None})
 
-            # voice on zone transition
+            # zone transition voice
             if zone != self.last_zone and self.focus_mode:
                 try:
                     from voice_output import speak_elevated
@@ -193,31 +165,31 @@ class CLRAgent:
                 except Exception:
                     pass
 
-            # gentle voice when hand on face/head detected (once per minute)
+            self.last_zone = zone
+
+            # ── Hand on face/head voice — once per 90s, always fires ──
             hof = signals.get("hand_on_face", False)
             hoh = signals.get("hand_on_head", False)
-            if (hof or hoh) and (time.time() - self.last_intervention) > 60:
+            now = time.time()
+            if (hof or hoh) and (now - self._last_hand_voice) > 90:
+                print(f"[AGENT] Hand gesture detected: face={hof} head={hoh}")
                 try:
-                    from voice_output import speak_text
-                    import random
-                    msgs = [
-                        "Hey — hand on your head. You doing okay?",
-                        "I see that. Take a breath. You've got this.",
-                        "Looks like you might be stressed. No rush — I'm here.",
-                    ]
-                    speak_text(random.choice(msgs))
-                except Exception:
-                    pass
+                    from voice_output import speak_hand_detected
+                    speak_hand_detected()
+                except Exception as e:
+                    print(f"[AGENT] hand voice error: {e}")
+                self._last_hand_voice = now
+                # show in dashboard too
+                if self.dashboard:
+                    self.dashboard.notify_stress("Hand on your face — take a breath 🌿")
 
-            self.last_zone = zone
             self.cooldown_secs = self.memory.get_adapted_cooldown()
             self.maybe_auto_focus(score, zone, signals)
 
-            # ── Only act if focus mode is ON ──────────────────────────
             if not self.focus_mode:
                 continue
 
-            cooldown_ok = (time.time() - self.last_intervention) > self.cooldown_secs
+            cooldown_ok = (now - self.last_intervention) > self.cooldown_secs
             if zone in ("OVERLOAD", "RAGE") and cooldown_ok:
                 action = self._get_action(zone, signals, score)
                 if action:
@@ -226,7 +198,7 @@ class CLRAgent:
                         self.ui_callback({"score": score, "zone": zone, "signals": signals, "log": log})
                     idx = self.memory.record_intervention(action, score, zone)
                     self._execute(action)
-                    self.last_intervention = time.time()
+                    self.last_intervention = now
                     self._observe_outcome(idx, score)
 
     def start(self):

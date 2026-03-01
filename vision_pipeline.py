@@ -1,40 +1,24 @@
-# vision_pipeline.py — works with mediapipe 0.10+ (new API) + fallback to haar
-
+# vision_pipeline.py
 import threading
 import time
 import cv2
 
 MEDIAPIPE_OK = False
-mp_face_mesh = None
-mp_hands = None
 
 try:
     import mediapipe as mp
-    # mediapipe 0.10+ uses new task-based API on some builds
-    # try old solutions API first
     try:
         _ = mp.solutions.face_mesh
         _ = mp.solutions.hands
         MEDIAPIPE_OK = True
-        MEDIAPIPE_NEW = False
         print("[VISION] mediapipe solutions API ready")
     except AttributeError:
-        # try new API
-        try:
-            from mediapipe.tasks import python as mp_tasks
-            from mediapipe.tasks.python import vision as mp_vision
-            MEDIAPIPE_OK = True
-            MEDIAPIPE_NEW = True
-            print("[VISION] mediapipe tasks API ready")
-        except Exception as e2:
-            print(f"[VISION] mediapipe both APIs failed: {e2}, using haar fallback")
-            MEDIAPIPE_OK = False
+        print("[VISION] mediapipe solutions not available, using haar")
 except ImportError:
-    print("[VISION] mediapipe not installed — run: pip install mediapipe==0.10.9")
+    print("[VISION] mediapipe not installed")
 
 
 class VisionPipeline:
-
     LEFT_EYE  = [33, 160, 158, 133, 153, 144]
     RIGHT_EYE = [362, 385, 387, 263, 373, 380]
     MOUTH_TOP    = 13
@@ -52,7 +36,6 @@ class VisionPipeline:
             "hand_on_head":    False,
             "stress_gestures": 0,
         }
-
         self._hand_on_face_frames = 0
         self._hand_on_head_frames = 0
         self._eye_strained_frames = 0
@@ -60,9 +43,7 @@ class VisionPipeline:
 
         self._init_detectors()
         self._cap = cv2.VideoCapture(0)
-
-        t = threading.Thread(target=self._loop, daemon=True)
-        t.start()
+        threading.Thread(target=self._loop, daemon=True).start()
 
     def _init_detectors(self):
         global MEDIAPIPE_OK
@@ -74,17 +55,17 @@ class VisionPipeline:
             self._face_mesh = mp.solutions.face_mesh.FaceMesh(
                 max_num_faces=1,
                 refine_landmarks=True,
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
+                min_detection_confidence=0.4,
+                min_tracking_confidence=0.4,
             )
             self._hands = mp.solutions.hands.Hands(
                 max_num_hands=2,
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
+                min_detection_confidence=0.4,
+                min_tracking_confidence=0.4,
             )
             print("[VISION] Face mesh + hands initialised")
         except Exception as e:
-            print(f"[VISION] mediapipe init error: {e} — falling back to haar")
+            print(f"[VISION] mediapipe init error: {e} — haar fallback")
             MEDIAPIPE_OK = False
             self._setup_haar()
 
@@ -92,9 +73,8 @@ class VisionPipeline:
         self._face_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         )
-        print("[VISION] Using haar fallback (no hand/eye strain detection)")
+        print("[VISION] Using haar fallback")
 
-    # ── EAR helper ─────────────────────────────────────────────────────
     def _ear(self, lm, indices, w, h):
         pts = [(lm[i].x * w, lm[i].y * h) for i in indices]
         v1 = abs(pts[1][1] - pts[5][1])
@@ -102,7 +82,6 @@ class VisionPipeline:
         horiz = abs(pts[0][0] - pts[3][0])
         return (v1 + v2) / (2.0 * horiz) if horiz > 0 else 0.3
 
-    # ── MediaPipe analysis ─────────────────────────────────────────────
     def _analyse_mp(self, frame):
         h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -116,13 +95,16 @@ class VisionPipeline:
         face_present = False
         eye_state    = "unknown"
         mouth_open   = False
-        hof = hoh    = False
+        found_hof    = False
+        found_hoh    = False
+
+        fx_min = fx_max = fy_min = fy_max = 0.5  # defaults
 
         if face_result.multi_face_landmarks:
             face_present = True
             lm = face_result.multi_face_landmarks[0].landmark
 
-            # Eye strain
+            # Eye strain via EAR
             left_ear  = self._ear(lm, self.LEFT_EYE,  w, h)
             right_ear = self._ear(lm, self.RIGHT_EYE, w, h)
             avg_ear   = (left_ear + right_ear) / 2.0
@@ -149,38 +131,55 @@ class VisionPipeline:
                 self._mouth_open_frames = max(0, self._mouth_open_frames - 1)
             mouth_open = self._mouth_open_frames >= 4
 
-            # Face bounding box
+            # Face bounding box with generous padding
             xs = [l.x for l in lm]
             ys = [l.y for l in lm]
-            fx_min, fx_max = min(xs), max(xs)
-            fy_min, fy_max = min(ys), max(ys)
+            fx_min = min(xs) - 0.08
+            fx_max = max(xs) + 0.08
+            fy_min = min(ys) - 0.08
+            fy_max = max(ys) + 0.12
 
-            # Hand proximity
-            found_hof = found_hoh = False
-            if hands_result.multi_hand_landmarks:
-                for hand_lm in hands_result.multi_hand_landmarks:
-                    for idx in [0, 4, 8, 12, 16, 20]:
-                        hx = hand_lm.landmark[idx].x
-                        hy = hand_lm.landmark[idx].y
-                        # inside face box → hand on face
-                        if fx_min - 0.05 < hx < fx_max + 0.05 and fy_min - 0.05 < hy < fy_max + 0.1:
+        # Hand detection — runs even if face not detected
+        if hands_result.multi_hand_landmarks:
+            for hand_lm in hands_result.multi_hand_landmarks:
+                # Use ALL 21 landmarks for max coverage
+                for idx in range(21):
+                    hx = hand_lm.landmark[idx].x
+                    hy = hand_lm.landmark[idx].y
+
+                    # hand on face: any hand landmark inside generous face box
+                    if face_present:
+                        if fx_min < hx < fx_max and fy_min < hy < fy_max:
                             found_hof = True
-                        # above face box → hand on head
-                        if fx_min - 0.12 < hx < fx_max + 0.12 and hy < fy_min + 0.04:
+
+                        # hand on head: hand above face top with wide x range
+                        # very generous — head is roughly 0.15 above face top
+                        if fx_min - 0.2 < hx < fx_max + 0.2 and hy < fy_min + 0.08:
+                            found_hoh = True
+                    else:
+                        # no face detected but hand in upper 40% of frame = probably on head
+                        if hy < 0.4:
                             found_hoh = True
 
-            if found_hof:
-                self._hand_on_face_frames += 1
-            else:
-                self._hand_on_face_frames = max(0, self._hand_on_face_frames - 1)
+                # Debug print when hand is visible
+                wrist = hand_lm.landmark[0]
+                print(f"[VISION] Hand wrist at ({wrist.x:.2f}, {wrist.y:.2f}) "
+                      f"face_box=({fx_min:.2f}-{fx_max:.2f}, {fy_min:.2f}-{fy_max:.2f}) "
+                      f"hof={found_hof} hoh={found_hoh}")
 
-            if found_hoh:
-                self._hand_on_head_frames += 1
-            else:
-                self._hand_on_head_frames = max(0, self._hand_on_head_frames - 1)
+        # Require only 3 consecutive frames (was 5) — more responsive
+        if found_hof:
+            self._hand_on_face_frames += 1
+        else:
+            self._hand_on_face_frames = max(0, self._hand_on_face_frames - 1)
 
-            hof = self._hand_on_face_frames >= 5
-            hoh = self._hand_on_head_frames >= 5
+        if found_hoh:
+            self._hand_on_head_frames += 1
+        else:
+            self._hand_on_head_frames = max(0, self._hand_on_head_frames - 1)
+
+        hof = self._hand_on_face_frames >= 3
+        hoh = self._hand_on_head_frames >= 3
 
         return face_present, eye_state, mouth_open, hof, hoh
 
@@ -206,9 +205,7 @@ class VisionPipeline:
                 continue
 
             stressed = (eye == "strained") or hof or hoh
-            gestures = self.state.get("stress_gestures", 0)
-            if hof or hoh:
-                gestures += 1
+            gestures = self.state.get("stress_gestures", 0) + (1 if (hof or hoh) else 0)
 
             self.state = {
                 "face_present":    fp,
@@ -223,16 +220,3 @@ class VisionPipeline:
 
     def get_state(self):
         return dict(self.state)
-
-
-if __name__ == "__main__":
-    v = VisionPipeline()
-    print("Testing — put your hand on your face or head...")
-    for _ in range(30):
-        s = v.get_state()
-        print(
-            f"face={s['face_present']}  eye={s['eye_state']}  "
-            f"hand_on_face={s['hand_on_face']}  hand_on_head={s['hand_on_head']}  "
-            f"stressed={s['stressed_face']}"
-        )
-        time.sleep(1)
